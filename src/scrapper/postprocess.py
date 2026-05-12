@@ -8,7 +8,8 @@ from datetime import date, timedelta
 @dataclass
 class CleaningReport:
     jour: date
-    mouvements_non_user: int
+    mouvements_supprimes: int
+    mouvements_truck_conserves: int
     valeurs_interpolees: int
     mouvements_orphelins: int
     records_originaux: int
@@ -22,7 +23,7 @@ def _day_bounds(jour: date) -> tuple[str, str]:
     return start, end
 
 
-def _clean_db(db_path, jour, output_path) -> tuple[int, int, int]:
+def _clean_db(db_path, jour, output_path, keep_truck: bool = True) -> tuple[int, int, int, int]:
     shutil.copy2(db_path, output_path)
     conn = sqlite3.connect(output_path)
     start, end = _day_bounds(jour)
@@ -30,10 +31,19 @@ def _clean_db(db_path, jour, output_path) -> tuple[int, int, int]:
     conn.execute("DELETE FROM station_history WHERE timestamp < ? OR timestamp >= ?", (start, end))
     conn.execute("DELETE FROM bike_movements WHERE timestamp < ? OR timestamp >= ?", (start, end))
 
-    nb_non_user = conn.execute(
-        "SELECT COUNT(*) FROM bike_movements WHERE source != 'USER'"
+    if keep_truck:
+        delete_clause = "source = 'MAINTENANCE'"
+    else:
+        delete_clause = "source != 'USER'"
+
+    nb_supprimes = conn.execute(
+        f"SELECT COUNT(*) FROM bike_movements WHERE {delete_clause}"
     ).fetchone()[0]
-    conn.execute("DELETE FROM bike_movements WHERE source != 'USER'")
+    conn.execute(f"DELETE FROM bike_movements WHERE {delete_clause}")
+
+    nb_truck = conn.execute(
+        "SELECT COUNT(*) FROM bike_movements WHERE source = 'TRUCK'"
+    ).fetchone()[0]
 
     nb_interpolated = conn.execute("""
         SELECT COUNT(*) FROM station_history sh
@@ -83,10 +93,10 @@ def _clean_db(db_path, jour, output_path) -> tuple[int, int, int]:
     with sqlite3.connect(output_path) as c:
         c.execute("VACUUM")
 
-    return nb_interpolated, nb_orphans, nb_non_user
+    return nb_interpolated, nb_orphans, nb_supprimes, nb_truck
 
 
-def run_postprocess(db_path: str, jour: date, output_dir: str | None = None):
+def run_postprocess(db_path: str, jour: date, output_dir: str | None = None, keep_truck: bool = True):
     start, end = _day_bounds(jour)
 
     conn = sqlite3.connect(db_path)
@@ -101,7 +111,7 @@ def run_postprocess(db_path: str, jour: date, output_dir: str | None = None):
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"clean_{jour.isoformat()}.sql")
 
-    nb_interpolated, nb_orphans, nb_non_user = _clean_db(db_path, jour, output_path)
+    nb_interpolated, nb_orphans, nb_supprimes, nb_truck = _clean_db(db_path, jour, output_path, keep_truck=keep_truck)
 
     with sqlite3.connect(output_path) as c:
         records_conserves = c.execute("""
@@ -110,7 +120,8 @@ def run_postprocess(db_path: str, jour: date, output_dir: str | None = None):
 
     report = CleaningReport(
         jour=jour,
-        mouvements_non_user=nb_non_user,
+        mouvements_supprimes=nb_supprimes,
+        mouvements_truck_conserves=nb_truck,
         valeurs_interpolees=nb_interpolated,
         mouvements_orphelins=nb_orphans,
         records_originaux=records_originaux,
@@ -118,12 +129,14 @@ def run_postprocess(db_path: str, jour: date, output_dir: str | None = None):
         output_path=output_path,
     )
 
+    supprime_label = "MAINTENANCE supprimés" if keep_truck else "non-USER supprimés"
     print(f"\n{'=' * 60}")
-    print(f" Nettoyage — {report.jour}")
+    print(f" Nettoyage — {report.jour}  (keep_truck={keep_truck})")
     print(f"{'=' * 60}")
-    print(f"  Mouvements non-user supprimés : {report.mouvements_non_user}")
-    print(f"  Valeurs interpolées           : {report.valeurs_interpolees}")
-    print(f"  Mouvements orphelins supprimés: {report.mouvements_orphelins}")
-    print(f"  Records originaux             : {report.records_originaux}")
-    print(f"  Records conservés             : {report.records_conserves}")
-    print(f"  Fichier exporté               : {report.output_path}")
+    print(f"  Mouvements {supprime_label:<22}: {report.mouvements_supprimes}")
+    print(f"  Mouvements TRUCK conservés          : {report.mouvements_truck_conserves}")
+    print(f"  Valeurs interpolées                 : {report.valeurs_interpolees}")
+    print(f"  Mouvements orphelins supprimés      : {report.mouvements_orphelins}")
+    print(f"  Records originaux                   : {report.records_originaux}")
+    print(f"  Records conservés                   : {report.records_conserves}")
+    print(f"  Fichier exporté                     : {report.output_path}")
