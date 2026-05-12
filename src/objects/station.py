@@ -1,48 +1,32 @@
+from dataclasses import dataclass
+
+
+@dataclass
 class Station:
+    number: int
+    name: str
+    capacity: int
+    address: str
+    long: float
+    lat: float
 
-    def __init__(self, station_number: int, name: str, capacity: int,
-                 address: str, geo_long: float, geo_lat: float, connected: bool = True):
-        self.number = station_number
-        self.name = name
-        self.capacity = capacity
-        self.address = address
-        self.long = geo_long
-        self.lat = geo_lat
-        self.connected = connected
 
-    def __str__(self):
-        return f"Station(number={self.number}, nom='{self.name}', capacity={self.capacity})"
-
+@dataclass
 class TargetedStation(Station):
+    bike_count: int
+    bike_target: int
 
-    @staticmethod
-    def from_station(station: Station, bike_count: int, bike_target: int):
-        return TargetedStation(station.number, station.name, station.capacity, station.address, station.long, station.lat, bike_count, bike_target)
-
-    def __init__(self, station_number: int, name: str, capacity: int,
-                 address: str, geo_long: float, geo_lat: float, bike_count: int, bike_target: int):
-        super().__init__(station_number, name, capacity, address, geo_long, geo_lat)
-        self.bike_count = bike_count
-        self.bike_target = bike_target
-
+    @classmethod
+    def from_station(cls, station: Station, bike_count: int, bike_target: int) -> "TargetedStation":
+        return cls(station.number, station.name, station.capacity, station.address,
+                   station.long, station.lat, bike_count, bike_target)
 
     def bike_gap(self) -> int:
-        """
-        Calcule l'écart entre le nombre de vélos actuel et le nombre de vélos cible
-        Un écart positif signifie qu'il y a plus de vélos que le cible (besoin de retirer des vélos)
-        Un écart négatif signifie qu'il y a moins de vélos que le cible (besoin d'ajouter des vélos)
-        Un écart de 0 signifie que la station est équilibrée
-        """
-        return self.bike_count-self.bike_target
+        """Surplus (>0) ou déficit (<0) de vélos par rapport à la cible."""
+        return self.bike_count - self.bike_target
 
-    def is_loading(self):
+    def is_loading(self) -> bool:
         return self.bike_gap() > 0
 
-    def is_unloading(self):
+    def is_unloading(self) -> bool:
         return self.bike_gap() < 0
-
-    def is_equilibrated(self):
-        return self.bike_gap() == 0
-
-    def __str__(self):
-        return f"TargetedStation(number={self.number}, nom='{self.name}', capacity={self.capacity}, bike_count={self.bike_count}, bike_target={self.bike_target})"

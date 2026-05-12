@@ -2,13 +2,13 @@ import os
 import shutil
 import sqlite3
 from datetime import datetime
-from typing import Optional, List, Dict, Tuple
+
 from src.objects.bike import Bike
 from src.objects.station import Station
 
 
 def archive_db(db_path: str):
-    """Archive la DB actuelle dans un sous-dossier archives/ avec la date/heure."""
+    """Déplace la DB de la session précédente dans `<data>/archives/<timestamp>.sql`."""
     if not os.path.exists(db_path):
         return
     db_dir = os.path.dirname(db_path) or "."
@@ -21,18 +21,17 @@ def archive_db(db_path: str):
 
 
 class Database:
-    """Gestion de la base de données SQLite pour le scraping Bicloo"""
+    """SQLite local utilisé par le scrapper (écritures uniquement)."""
 
-    def __init__(self, db_path: str, clear: bool = False):
+    def __init__(self, db_path: str):
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
 
     def _init_tables(self):
-        cursor = self.conn.cursor()
-
-        cursor.execute("""
+        # `station_number` est l'identifiant Bicloo natif, on l'utilise comme PK.
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS stations (
                 station_number INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -43,14 +42,16 @@ class Database:
             )
         """)
 
-        cursor.execute("""
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS bikes (
                 bike_id TEXT PRIMARY KEY,
                 number INTEGER NOT NULL
             )
         """)
 
-        cursor.execute("""
+        # Un mouvement = un événement ARRIVAL/DEPARTURE détecté en diffant deux
+        # snapshots successifs. `source` discrimine USER / TRUCK / MAINTENANCE.
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS bike_movements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 bike_id TEXT NOT NULL,
@@ -63,7 +64,9 @@ class Database:
             )
         """)
 
-        cursor.execute("""
+        # Série temporelle des counts par station : alimentée à chaque changement
+        # + recalage périodique sur les counts officiels (cf. Scrapper).
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS station_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 station_number INTEGER NOT NULL,
@@ -73,28 +76,15 @@ class Database:
             )
         """)
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_station_history_station
-            ON station_history(station_number, timestamp)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_bike_movements_bike_id
-            ON bike_movements(bike_id)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_bike_movements_station
-            ON bike_movements(station_number, timestamp)
-        """)
+        # Index sur (station, timestamp) : toutes les requêtes d'analyse filtrent
+        # par station et trient temporellement.
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_station_history_station ON station_history(station_number, timestamp)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_bike_movements_bike_id ON bike_movements(bike_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_bike_movements_station ON bike_movements(station_number, timestamp)")
 
         self.conn.commit()
 
-    """
-    ---------------------------
-    Requêtes d'écriture
-    ---------------------------
-    """
-
-    def upsert_stations(self, stations: List[Station]):
+    def upsert_stations(self, stations: list[Station]):
         self.conn.executemany("""
             INSERT INTO stations (station_number, name, capacity, address, geo_lat, geo_long)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -107,23 +97,22 @@ class Database:
         """, [(s.number, s.name, s.capacity, s.address, s.lat, s.long) for s in stations])
         self.conn.commit()
 
-    def upsert_bikes(self, bikes: List[Bike]):
+    def upsert_bikes(self, bikes: list[Bike]):
         self.conn.executemany("""
             INSERT INTO bikes (bike_id, number)
             VALUES (?, ?)
-            ON CONFLICT(bike_id) DO UPDATE SET
-                number = excluded.number
+            ON CONFLICT(bike_id) DO UPDATE SET number = excluded.number
         """, [(b.id, b.number) for b in bikes])
         self.conn.commit()
 
-    def insert_movements_batch(self, movements: List[Tuple[str, int, str, datetime, str]]):
+    def insert_movements_batch(self, movements: list[tuple[str, int, str, datetime, str]]):
         self.conn.executemany("""
             INSERT INTO bike_movements (bike_id, station_number, movement_type, timestamp, source)
             VALUES (?, ?, ?, ?, ?)
         """, movements)
         self.conn.commit()
 
-    def insert_station_history_batch(self, records: List[Tuple[int, int, datetime]]):
+    def insert_station_history_batch(self, records: list[tuple[int, int, datetime]]):
         if not records:
             return
         self.conn.executemany("""
@@ -131,54 +120,3 @@ class Database:
             VALUES (?, ?, ?)
         """, records)
         self.conn.commit()
-
-
-    """
-    ---------------------------
-    Requêtes de lecture
-    ---------------------------
-    """
-
-    def get_movements(self, station_number: int, start_time: Optional[datetime] = None,
-                     end_time: Optional[datetime] = None, limit: Optional[int] = None) -> List[Dict]:
-        query = "SELECT * FROM bike_movements WHERE station_number = ?"
-        params: list = [station_number]
-
-        if start_time:
-            query += " AND timestamp >= ?"
-            params.append(start_time)
-        if end_time:
-            query += " AND timestamp <= ?"
-            params.append(end_time)
-
-        query += " ORDER BY timestamp DESC"
-
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-
-        cursor = self.conn.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
-
-    def get_station_history(self, station_number: int, start_time: Optional[datetime] = None,
-                           end_time: Optional[datetime] = None) -> List[Dict]:
-        query = "SELECT * FROM station_history WHERE station_number = ?"
-        params: list = [station_number]
-
-        if start_time:
-            query += " AND timestamp >= ?"
-            params.append(start_time)
-        if end_time:
-            query += " AND timestamp <= ?"
-            params.append(end_time)
-
-        query += " ORDER BY timestamp DESC"
-
-        cursor = self.conn.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
-
-    def get_all_stations(self) -> List[Dict]:
-        return [dict(row) for row in self.conn.execute("SELECT * FROM stations").fetchall()]
-
-    def get_all_bikes(self) -> List[Dict]:
-        return [dict(row) for row in self.conn.execute("SELECT * FROM bikes").fetchall()]
