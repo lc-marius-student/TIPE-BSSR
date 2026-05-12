@@ -4,10 +4,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, List
 
 from src.objects.station import TargetedStation, Station
-from src.solver.algorithm.method1 import method1
-from src.solver.algorithm.method2 import method2
+from src.solver.algorithm.builder.method1 import method1
+from src.solver.algorithm.builder.method2 import method2
 
-from src.solver.algorithm.opt import opt2, opt3
+from src.solver.algorithm.incrementer.opt import opt2, opt3
 from src.solver.graph import SolvingStationGraph
 from src.solver.reviewer import review_solution, SolutionMetrics
 from src.solver.solver import is_graph_solvable

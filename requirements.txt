@@ -1,0 +1,6 @@
+requests>=2.32
+osmnx>=2.0
+networkx>=3.6
+matplotlib>=3.10
+scipy>=1.17
+numpy>=2.4
