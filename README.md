@@ -60,3 +60,4 @@ Pipeline en quatre étapes : tronquer au jour, filtrer par source, interpoler le
 - Critiquer les résultats et la démarche : impact des approximations successives (indépendance Poisson, troncature de Skellam, vitesses OSM réduites, heuristiques d'approximation au lieu d'une résolution exacte) sur la qualité de la tournée.
 - Comparer la tournée calculée avec la tournée réelle du camion Bicloo (mouvements `source='TRUCK'` reconstitués à partir des données scrappées) : différence de distance, de durée, de stations visitées.
 - Ajouter ref bibliographique :  Bräysy, O. & Gendreau, M. (2005). Vehicle Routing Problem with Time Windows, Part I: Route Construction and Local Search Algorithms. Transportation Science 39(1), 104-118.
+- Ajouter ref bibliographique : Lourenço, H. R., Martin, O. C. & Stützle, T. (2003). Iterated Local Search. In F. Glover & G. Kochenberger (eds.), Handbook of Metaheuristics, vol. 57, pp. 320–353. Kluwer Academic.

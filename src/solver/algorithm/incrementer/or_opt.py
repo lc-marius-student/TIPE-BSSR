@@ -39,11 +39,11 @@ def _relocate(turn: List[int], i: int, L: int, p: int) -> List[int]:
     return rest[:new_p + 1] + segment + rest[new_p + 1:]
 
 
-def _feasible(new_turn: List[int], bike_gap_by_id: Dict[int, int], capacity: int) -> bool:
+def _feasible(new_turn: List[int], gaps: Dict[int, int], capacity: int) -> bool:
     """Charge ∈ [0, capacité] à chaque pas du nouveau tour."""
     load = 0
     for station_id in new_turn[1:]:        # on saute le dépôt en tête (charge 0)
-        load += bike_gap_by_id[station_id]
+        load += gaps[station_id]
         if load < 0 or load > capacity:
             return False
     return True
@@ -65,7 +65,7 @@ def or_opt(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: in
     if n < 4:
         return
     distance       = graph.map_cache_distance
-    bike_gap_by_id = {station_id: graph.get_station(station_id).bike_gap() for station_id in turn}
+    gaps = {station_id: graph.get_station(station_id).bike_gap() for station_id in turn}
 
     for _ in range(max_iterations):
         improving_turn: Optional[List[int]] = None
@@ -88,10 +88,10 @@ def or_opt(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: in
                     # On extrait turn[i..i+L-1] (= segment) et on le réinsère après turn[p] :
                     #
                     #   avant :   t1 → t2 → ... → t3 → t4    ...    p1 → p2
-                    #                      └ segment ┘
+                    #                  └─ segment ─┘
                     #
                     #   après :   t1 → t4                    ...    p1 → t2 → ... → t3 → p2
-                    #             └─trou─┘                          └── segment relocalisé ──┘
+                    #             └─trou─┘                               └─ segment ─┘
                     #
                     # 3 arêtes disparaissent : (t1, t2)   entrée segment
                     #                          (t3, t4)   sortie segment
@@ -108,7 +108,7 @@ def or_opt(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: in
                     )
                     if delta < 0:
                         candidate = _relocate(turn, i, L, p)
-                        if _feasible(candidate, bike_gap_by_id, vehicle_capacity):
+                        if _feasible(candidate, gaps, vehicle_capacity):
                             improving_turn = candidate
                             break
 
