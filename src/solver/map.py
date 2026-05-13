@@ -175,6 +175,7 @@ def test():
 
     print("Map initialized for city:", len(map.graph.nodes), "nodes,", len(map.graph.edges), "edges", "created at", map.created_at)
 
-test()
+if __name__ == "__main__":
+    test()
 
 
