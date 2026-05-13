@@ -14,12 +14,6 @@
 #     rev_prefix [k] = Σ d(turn[m], turn[m-1])  pour m = 1..k     (reverse)
 #     load_prefix[k] = Σ gap(turn[m])           pour m = 1..k     (charge)
 #
-# et le mouvement (i, j) coûte alors
-#
-#     Δ = d(turn[i-1], turn[j]) + d(turn[i], turn[j+1])
-#         + (rev_prefix[j] − rev_prefix[i])
-#         − (fwd_prefix[j+1] − fwd_prefix[i-1])
-#
 # Faisabilité capacité : après l'inversion, la charge à la position i+offset
 # vaut load_prefix[i-1] + load_prefix[j] − load_prefix[j-offset-1] ; on
 # vérifie qu'elle reste dans [0, capacité] pour tout offset, court-circuit

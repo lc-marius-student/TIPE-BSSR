@@ -1,7 +1,9 @@
 from src.objects.station import TargetedStation, Station
 from src.solver.algorithm.builder.method1 import method1
 from src.solver.algorithm.builder.method2 import method2
-from src.solver.algorithm.incrementer.opt import opt2, opt3
+from src.solver.algorithm.incrementer.ils import ils
+from src.solver.algorithm.incrementer.opt2 import opt2
+from src.solver.algorithm.incrementer.or_opt import or_opt
 from src.solver.graph import SolvingStationGraph
 from enum import Enum
 
@@ -15,7 +17,8 @@ class SolvingAlgorithmBuilder(Enum):
 
 class SolvingAlgorithmImprover(Enum):
     OPT_2 = 1
-    OPT_3 = 2
+    OR_OPT = 2
+    ILS = 3  # Iterated Local Search avec VND (2-opt + or-opt) — qualité maximale
 
 def create_graph(stations: list[TargetedStation], depot_station: Station, map: Map) -> SolvingStationGraph:
     """
@@ -83,8 +86,10 @@ def solve(graph: SolvingStationGraph, capacity: int,
         for improver in improvers:
             if improver == SolvingAlgorithmImprover.OPT_2:
                 opt2(graph, capacity, max_iterations=improver_max_iterations)
-            elif improver == SolvingAlgorithmImprover.OPT_3:
-                opt3(graph, capacity, max_iterations=improver_max_iterations)
+            elif improver == SolvingAlgorithmImprover.OR_OPT:
+                or_opt(graph, capacity, max_iterations=improver_max_iterations)
+            elif improver == SolvingAlgorithmImprover.ILS:
+                ils(graph, capacity)
             else:
                 raise Exception("Unknown solving algorithm improver")
 

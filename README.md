@@ -59,3 +59,4 @@ Pipeline en quatre étapes : tronquer au jour, filtrer par source, interpoler le
 - Câblage complet `scrapper → targeter → solver` (entrée du solver = `TargetedStation` avec `bike_target` calculé).
 - Critiquer les résultats et la démarche : impact des approximations successives (indépendance Poisson, troncature de Skellam, vitesses OSM réduites, heuristiques d'approximation au lieu d'une résolution exacte) sur la qualité de la tournée.
 - Comparer la tournée calculée avec la tournée réelle du camion Bicloo (mouvements `source='TRUCK'` reconstitués à partir des données scrappées) : différence de distance, de durée, de stations visitées.
+- Ajouter ref bibliographique :  Bräysy, O. & Gendreau, M. (2005). Vehicle Routing Problem with Time Windows, Part I: Route Construction and Local Search Algorithms. Transportation Science 39(1), 104-118.
