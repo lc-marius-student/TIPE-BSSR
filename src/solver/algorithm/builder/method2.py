@@ -1,10 +1,3 @@
-import sys
-import os
-
-# Ajoute le dossier racine du projet au PYTHONPATH
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../')))
-
-
 from typing import List, Optional
 from src.objects.station import TargetedStation, Station
 from src.solver.graph import SolvingStationGraph
@@ -18,13 +11,12 @@ def construire_chemin_surplus_graph(graph: SolvingStationGraph, start_station: O
     start = graph.get_station(0)
     chemin = [start]
 
-    # Liste des stations en surplus (écart positif)
-    surplus = [s for s in graph.list_stations() if s.number != 0 and s.bike_gap() > 0] #ceration d'une liste par compréhension avec toutes les stations qui ont un surplus
+    surplus = [s for s in graph.list_stations() if s.number != 0 and s.bike_gap() > 0]
 
     if not surplus:
         return chemin
 
-    # Premier surplus : imposé (multi-start) ou laissé au NN du dépôt
+    # Premier surplus : imposé (multi-start) ou laissé au NN du dépôt.
     if start_station is not None and start_station in surplus:
         chemin.append(start_station)
         surplus.remove(start_station)
@@ -32,12 +24,11 @@ def construire_chemin_surplus_graph(graph: SolvingStationGraph, start_station: O
     else:
         current_station = start
 
-    # Boucle gloutonne : on ajoute le plus proche voisin en surplus à chaque étape
     while surplus:
         nearest = graph.get_nearest_neighbor(current_station.number,lambda s: s in surplus)
 
         if nearest is None:
-            break  # On a pas trouvé de station valide
+            break
 
         chemin.append(nearest)
         surplus.remove(nearest)
@@ -53,7 +44,6 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
     `start_station` (utilisé par le multi-start).
     """
     chemin = construire_chemin_surplus_graph(graph, start_station)
-    #start = graph.get_station(0)
 
     if len(chemin) == 1:
         return None
@@ -61,16 +51,13 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
     deficits = [s for s in graph.list_stations() if s.number != 0 and s.bike_gap() < 0]
     remaining_gap = {s.number: s.bike_gap() for s in graph.list_stations()}
 
-    # On commence par la première station en surplus après le dépôt
     current_station = chemin[1]
     graph.add_edge(0, current_station.number)
 
     camion = remaining_gap[current_station.number]
     remaining_gap[current_station.number] = 0
 
-    # Parcours des stations en surplus
     for next_station in chemin[2:]:
-        # Insérer des déficits possibles entre current_station et next_station
         while deficits:
             possibles = [d for d in deficits if -remaining_gap[d.number] <= camion]
             if not possibles:
@@ -81,7 +68,10 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
             if nearest_deficit is None:
                 break
 
-            if graph.get_distance(current_station, nearest_deficit) < graph.get_distance(current_station, next_station):
+            # Insertion soit par proximité (qualité), soit forcée quand charger
+            # le prochain surplus ferait déborder le camion (faisabilité).
+            overflow = camion + remaining_gap[next_station.number] > capacite
+            if overflow or graph.get_distance(current_station, nearest_deficit) < graph.get_distance(current_station, next_station):
                 besoin = -remaining_gap[nearest_deficit.number]
                 camion -= besoin
                 remaining_gap[nearest_deficit.number] = 0
@@ -91,21 +81,19 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
             else:
                 break
 
-        # Passage à la prochaine station en surplus
+        # Surplus incargeable malgré les déchargements : départ infaisable,
+        # le multi-start en essaiera un autre.
+        diff = remaining_gap[next_station.number]
+        if camion + diff > capacite:
+            raise Exception("Capacité dépassée, départ infaisable")
+
         graph.add_edge(current_station.number, next_station.number)
         current_station = next_station
 
-        diff = remaining_gap[next_station.number]
-        if diff > 0:
-            prise = min(diff, capacite - camion)
-            camion += prise
-            remaining_gap[next_station.number] -= prise
-        elif diff < 0:
-            depot = min(-diff, camion)
-            camion -= depot
-            remaining_gap[next_station.number] += depot
+        # Surplus servi intégralement (`chemin` ne contient que des surplus).
+        camion += diff
+        remaining_gap[next_station.number] = 0
 
-    # Ajouter les déficits restants à la fin du parcours
     for d in deficits[:]:
         if remaining_gap[d.number] < 0:
             besoin = -remaining_gap[d.number]
@@ -114,7 +102,6 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
             graph.add_edge(current_station.number, d.number)
             current_station = d
 
-    # Retour au dépôt
     graph.add_edge(current_station.number, 0)
 
 

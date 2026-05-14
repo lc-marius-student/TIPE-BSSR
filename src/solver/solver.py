@@ -18,15 +18,10 @@ class SolvingAlgorithmBuilder(Enum):
 class SolvingAlgorithmImprover(Enum):
     OPT_2 = 1
     OR_OPT = 2
-    ILS = 3  # Iterated Local Search avec VND (2-opt + or-opt) — qualité maximale
+    ILS = 3
 
 def create_graph(stations: list[TargetedStation], depot_station: Station, map: Map) -> SolvingStationGraph:
-    """
-    Crée un graphe à partir d'une liste de stations
-    :param stations: Liste de stations avec leurs objectifs et score actuel
-    :param depot_station: Station correspondant au dépot
-    :return: Le graphe nécessaire pour résoudre le problème
-    """
+    """Crée un graphe de résolution à partir de la liste des stations, en n'incluant que celles dont le bike_gap est non nul (et le dépôt). """
     graph = SolvingStationGraph(map, depot_station)
 
     for station in stations:
@@ -40,14 +35,7 @@ def create_graph(stations: list[TargetedStation], depot_station: Station, map: M
     return graph
 
 def is_graph_solvable(graph: SolvingStationGraph, q: int) -> bool:
-    """
-    Conditions pour qu'un graphe soit solvable :
-    – La somme des bike_gap doit être nulle (le nombre total de vélos à déplacer doit être égal au nombre total de vélos à ajouter).
-    - Pour Tout bike_gape : |bike_gape| < q/2
-    :param graph: Le graphe à vérifier
-    :param q: Capacité du camion
-    :return: True si le graphe est solvable, False sinon
-    """
+    """Vérifie si le graphe est solvable, c'est-à-dire si les contraintes de capacité sont respectées et si le bike_gap total est nul."""
     total: int = 0
     for station in graph.list_stations():
         if station.number != 0:
@@ -61,15 +49,7 @@ def is_graph_solvable(graph: SolvingStationGraph, q: int) -> bool:
 def solve(graph: SolvingStationGraph, capacity: int,
           builder: SolvingAlgorithmBuilder,
           improvers: list[SolvingAlgorithmImprover] = None, improver_max_iterations: int = 1000) -> SolutionMetrics:
-    """
-    Résout le problème de rééquilibrage des vélos en utilisant les algorithmes spécifiés
-    :param graph: Le graphe du problème
-    :param capacity: Capacité du camion
-    :param builder: Algorithme de construction du chemin initial
-    :param improvers: Liste d'algorithmes d'amélioration à appliquer après la construction initiale
-    :param improver_max_iterations: Nombre maximum d'itérations pour chaque algorithme d'amélioration
-    :return: None (le graphe est modifié en place pour contenir la solution
-    """
+    """Résout le problème de rééquilibrage des vélos en utilisant les algorithmes spécifiés"""
 
     print("Preloading distances...")
     graph.preload_distances()
@@ -93,4 +73,4 @@ def solve(graph: SolvingStationGraph, capacity: int,
             else:
                 raise Exception("Unknown solving algorithm improver")
 
-    return review_solution(graph)
+    return review_solution(graph, capacity)

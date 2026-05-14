@@ -46,15 +46,37 @@
 # =============================================================================
 
 import os
+from dataclasses import dataclass
+from datetime import datetime
 
 import networkx as nx
 import osmnx as ox
-from datetime import datetime
 
-def locate_sources(sources_files):
-    return os.path.exists(sources_files)
 
-def generate_sources(sources_files, city="Nantes Métropole, France") -> nx.MultiDiGraph:
+# Facteur appliqué à la vitesse autorisée selon le type de voie (cf. H3).
+SPEED_FACTORS = {
+    'motorway': 0.90,
+    'trunk': 0.85,
+    'primary': 0.75,
+    'secondary': 0.70,
+    'tertiary': 0.65,
+    'residential': 0.60,
+    'unclassified': 0.65,
+}
+DEFAULT_SPEED_FACTOR = 0.70
+TRAFFIC_SIGNAL_PENALTY = 15  # secondes ajoutées à chaque feu tricolore (cf. H4)
+
+
+def _is_traffic_signal(node_tags: dict) -> bool:
+    """Vrai si le nœud OSM porte le tag `highway=traffic_signals`."""
+    value = node_tags.get('highway')
+    if isinstance(value, list):
+        return 'traffic_signals' in value
+    return value == 'traffic_signals'
+
+
+def generate_sources(sources_file: str, city: str = "Nantes Métropole, France") -> nx.MultiDiGraph:
+    """Construit le graphe routier OSM, applique les hypothèses H3/H4 et le met en cache sur disque."""
     g = ox.graph_from_place(city, network_type="drive")
     g = ox.add_edge_speeds(g)
     g = ox.add_edge_travel_times(g)
@@ -62,120 +84,105 @@ def generate_sources(sources_files, city="Nantes Métropole, France") -> nx.Mult
     g.graph['city'] = city
     g.graph['creation_date'] = datetime.now().isoformat()
 
-    speed_factors = {
-        'motorway': 0.90,      # Autoroutes légèrement ralenties
-        'trunk': 0.85,
-        'primary': 0.75,       # Routes principales urbaines
-        'secondary': 0.70,
-        'tertiary': 0.65,
-        'residential': 0.60,   # Zones résidentielles avec stops fréquents
-        'unclassified': 0.65
-    }
+    nodes = g.nodes(data=True)
+    for _, dest, _, edge in g.edges(keys=True, data=True):
+        if 'travel_time' not in edge:
+            continue
 
-    nodes_data = g.nodes(data=True)
-    for u, v, k, route in g.edges(keys=True, data=True):
-        if 'travel_time' in route:
-            highway_type = route.get('highway')
-            if isinstance(highway_type, list):
-                highway_type = highway_type[0]
+        # H3 : la vitesse effective ne vaut qu'une fraction de la vitesse autorisée.
+        highway_type = edge.get('highway')
+        if isinstance(highway_type, list):
+            highway_type = highway_type[0]
+        edge['travel_time'] /= SPEED_FACTORS.get(highway_type, DEFAULT_SPEED_FACTOR)
 
-            factor = speed_factors.get(highway_type, 0.70)  # Par défaut 70%
-            route['travel_time'] = route['travel_time'] / factor
+        # H4 : pénalité fixe si le nœud d'arrivée de l'arête est un feu tricolore.
+        if _is_traffic_signal(nodes[dest]):
+            edge['travel_time'] += TRAFFIC_SIGNAL_PENALTY
 
-            node_tags = nodes_data[v]
-            is_traffic_signal = False
-            if 'highway' in node_tags:
-                val = node_tags['highway']
-                if isinstance(val, list):
-                    if 'traffic_signals' in val: is_traffic_signal = True
-                elif val == 'traffic_signals':
-                    is_traffic_signal = True
-            if is_traffic_signal:
-                route['travel_time'] += 15
-
-    ox.save_graphml(g, sources_files)
+    ox.save_graphml(g, sources_file)
     return g
 
-def load_sources(sources_file, city="Nantes Métropole, France") -> nx.MultiDiGraph:
+
+def load_sources(sources_file: str, city: str = "Nantes Métropole, France") -> nx.MultiDiGraph:
+    """Recharge un graphe mis en cache et vérifie qu'il correspond bien à la ville attendue."""
     g = ox.load_graphml(sources_file)
 
     if g.graph.get('city') != city:
-        raise ValueError(f"Graph file city '{g.graph.get('city')}' does not match expected city '{city}'.")
-
+        raise ValueError(f"Le graphe en cache concerne '{g.graph.get('city')}', et non '{city}'.")
     if g.graph.get('creation_date') is None:
-        raise ValueError("Graph file is missing 'creation_date' metadata.")
+        raise ValueError("Le graphe en cache n'a pas de métadonnée 'creation_date'.")
 
     return g
 
+
+@dataclass
 class GeoPoint:
-    def __init__(self, latitude: float, longitude: float):
-        self.latitude = latitude
-        self.longitude = longitude
+    latitude: float
+    longitude: float
 
 
 class Map:
 
-    def __init__(self, sources_file, city="Nantes Métropole, France"):
-        """
-        Initialise la carte en chargeant ou créant le graphe routier pour la ville donnée
-        :param sources_file: Chemin vers le fichier de graphe (GraphML)
-        :param city: Nom de la ville reconnu par OSMnx
-        """
+    def __init__(self, sources_file: str, city: str = "Nantes Métropole, France"):
+        """Charge le graphe routier depuis le cache disque, ou le génère depuis OSM s'il est absent. """
         self.city = city
 
-        if locate_sources(sources_file):
-            print("Resource loading...")
-            self.graph = load_sources(sources_file)
-            print("Resource loaded from file:", sources_file)
+        if os.path.exists(sources_file):
+            print("Chargement du graphe routier...")
+            self.graph = load_sources(sources_file, city)
+            print("Graphe chargé depuis", sources_file)
         else:
-            print("Resource not found, generating new graph map...")
+            print("Graphe absent, génération depuis OpenStreetMap...")
             self.graph = generate_sources(sources_file, city)
-            print("Resource generated and saved to file:", sources_file)
+            print("Graphe généré et sauvegardé dans", sources_file)
+
         self.created_at = self.graph.graph.get('creation_date', 'unknown')
+        self._node_cache: dict[tuple[float, float], int] = {}
+
+    def _nearest_node(self, point: GeoPoint) -> int:
+        """Projette un point GPS sur le nœud OSM le plus proche."""
+        key = (point.latitude, point.longitude)
+        if key not in self._node_cache:
+            self._node_cache[key] = ox.nearest_nodes(self.graph, X=point.longitude, Y=point.latitude)
+        return self._node_cache[key]
+
+    def _shortest(self, fr: GeoPoint, to: GeoPoint, weight: str) -> float:
+        """Plus court chemin entre deux points GPS, pondéré par `weight` (cf. H5, Dijkstra)."""
+        return nx.shortest_path_length(
+            self.graph,
+            source=self._nearest_node(fr),
+            target=self._nearest_node(to),
+            weight=weight,
+        )
 
     def get_time(self, fr: GeoPoint, to: GeoPoint) -> float:
-        origine_node = ox.nearest_nodes(self.graph, X=fr.longitude, Y=fr.latitude)
-        destination_node = ox.nearest_nodes(self.graph, X=to.longitude, Y=to.latitude)
-
-        return nx.shortest_path_length(
-            self.graph,
-            source=origine_node,
-            target=destination_node,
-            weight='travel_time'
-        )
-
-
+        """Temps de trajet estimé entre deux points, en secondes."""
+        return self._shortest(fr, to, weight='travel_time')
 
     def get_distance(self, fr: GeoPoint, to: GeoPoint) -> float:
-        origine_node = ox.nearest_nodes(self.graph, X=fr.longitude, Y=fr.latitude)
-        destination_node = ox.nearest_nodes(self.graph, X=to.longitude, Y=to.latitude)
+        """Distance routière entre deux points, en mètres."""
+        return self._shortest(fr, to, weight='length')
 
-        return nx.shortest_path_length(
-            self.graph,
-            source=origine_node,
-            target=destination_node,
-            weight='length'
-        )
 
 def test():
     map = Map("nantes_graph.graphml", city="Nantes Métropole, France")
 
-    time_to_calculate = datetime.now()
-    d = None
-    t = None
+    geo_a = GeoPoint(47.219717, -1.567036)
+    geo_b = GeoPoint(47.228951, -1.556430)
+
+    start = datetime.now()
+    d = t = None
     for _ in range(100):
-        geo_a = GeoPoint(47.219717, -1.567036)
-        geo_b = GeoPoint(47.228951, -1.556430)
         d = map.get_distance(geo_a, geo_b)
         t = map.get_time(geo_a, geo_b)
+    elapsed = (datetime.now() - start).total_seconds() / 100 / 2
 
-    print("Time from A to B:", t, "seconds", "(approx", t/60, "minutes)")
-    print("Distance from A to B:", d, "meters")
-    print("Calculations done in:", ((datetime.now() - time_to_calculate).total_seconds()/100/2, "seconds"))
+    print("Temps de A à B :", t, "secondes (environ", t / 60, "minutes)")
+    print("Distance de A à B :", d, "mètres")
+    print("Calcul moyen effectué en :", elapsed, "secondes")
+    print("Carte initialisée :", len(map.graph.nodes), "nœuds,",
+          len(map.graph.edges), "arêtes, créée le", map.created_at)
 
-    print("Map initialized for city:", len(map.graph.nodes), "nodes,", len(map.graph.edges), "edges", "created at", map.created_at)
 
 if __name__ == "__main__":
     test()
-
-
