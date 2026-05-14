@@ -7,19 +7,15 @@ from src.solver.graph import SolvingStationGraph
 
 @dataclass
 class SolutionMetrics:
-    """Métriques d'évaluation d'une solution"""
     solved: bool
-    distance: float          # Distance totale en mètres (plus bas = mieux)
-    score: float  # Score [0, 1] (plus haut = mieux)
-
+    distance: float
+    score: float
 
 def assert_solution(solution: SolvingStationGraph, capacity: int):
     """
     Vérifie si le graphe donné contient une solution valide : un cycle qui
     visite toutes les stations, de bike_gap total nul, et dont la charge du
     camion reste dans [0, capacity] à chaque pas.
-    :param solution: Le graphe à vérifier
-    :param capacity: Capacité du camion
     """
 
     if not solution.is_connex():
@@ -32,8 +28,6 @@ def assert_solution(solution: SolvingStationGraph, capacity: int):
     while current_id is not None and current_id not in visited:
         visited.add(current_id)
         gap += solution.get_station(current_id).bike_gap()
-        # `gap` est la charge cumulée du camion (le dépôt a un gap nul) :
-        # elle doit rester dans [0, capacity] après chaque station visitée.
         if current_id != 0 and (gap < 0 or gap > capacity):
             raise Exception(
                 f"Charge du camion hors limites ({gap}) après la station {current_id}."
@@ -68,12 +62,7 @@ def _tour_distance(graph: SolvingStationGraph) -> float:
 
 
 def review_solution(graph: SolvingStationGraph, capacity: int) -> SolutionMetrics:
-    """
-    Évalue une solution de manière détaillée
-    :param graph: Le graphe avec la solution (chemin construit)
-    :param capacity: Capacité du camion (nécessaire à la borne supérieure)
-    :return: Métriques complètes de la solution
-    """
+    """Évalue une solution de manière détaillée"""
     assert_solution(graph, capacity)
 
     distance = _tour_distance(graph)
@@ -111,10 +100,6 @@ def compute_bounds(graph: SolvingStationGraph, capacity: int) -> tuple[float, fl
     plus-proche-voisin multi-départ (`method1`). Une tournée réalisable
     majore l'optimum. À défaut (aucune tournée trouvée, ou coût aberrant),
     on retombe sur 2 × lower bound.
-
-    :param graph: Le graphe du problème
-    :param capacity: Capacité du camion
-    :return: (lower_bound, upper_bound)
     """
     stations = graph.list_stations()
 
@@ -136,12 +121,9 @@ def compute_bounds(graph: SolvingStationGraph, capacity: int) -> tuple[float, fl
 
     return lower_bound, upper_bound
 
-
 def _nearest_neighbour_upper_bound(graph: SolvingStationGraph, capacity: int) -> float | None:
     """
     Construit une tournée admissible par plus-proche-voisin multi-départ
-    (`method1`) sur une copie du graphe et renvoie sa longueur. Renvoie
-    None si aucune tournée n'est trouvée (instance non résolue par NN).
     """
     from src.solver.algorithm.builder.method1 import method1
 
@@ -149,7 +131,7 @@ def _nearest_neighbour_upper_bound(graph: SolvingStationGraph, capacity: int) ->
     for station in graph.list_stations():
         if station.number != 0:
             probe.add_station(station)
-    probe.map_cache_distance = graph.map_cache_distance  # réutilise le cache préchargé
+    probe.map_cache_distance = graph.map_cache_distance
 
     try:
         method1(probe, capacity)
