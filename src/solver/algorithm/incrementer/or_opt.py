@@ -64,7 +64,7 @@ def or_opt(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: in
     n = len(turn)
     if n < 4:
         return
-    distance       = graph.map_cache_distance
+    cost           = graph.time_cache
     gaps = {station_id: graph.get_station(station_id).bike_gap() for station_id in turn}
 
     for _ in range(max_iterations):
@@ -103,8 +103,8 @@ def or_opt(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: in
                     #
                     # delta = (somme des 3 ajoutées) − (somme des 3 supprimées)
                     delta = (
-                        distance[t1][t4] + distance[p1][t2] + distance[t3][p2]
-                        - distance[t1][t2] - distance[t3][t4] - distance[p1][p2]
+                        cost[t1][t4] + cost[p1][t2] + cost[t3][p2]
+                        - cost[t1][t2] - cost[t3][t4] - cost[p1][p2]
                     )
                     if delta < 0:
                         candidate = _relocate(turn, i, L, p)

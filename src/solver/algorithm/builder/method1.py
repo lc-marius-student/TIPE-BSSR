@@ -71,7 +71,7 @@ def _tour_and_distance(graph: SolvingStationGraph) -> tuple[List[int], float]:
         if nxt is None:
             break
         nxt_station = graph.get_station(nxt)
-        distance += graph.get_distance(cur_station, nxt_station)
+        distance += graph.get_time(cur_station, nxt_station)
         tour.append(nxt)
         if nxt == 0:
             break

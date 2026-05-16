@@ -71,7 +71,7 @@ def _single_start(graph: SolvingStationGraph, capacite: int, start_station: Opti
             # Insertion soit par proximité (qualité), soit forcée quand charger
             # le prochain surplus ferait déborder le camion (faisabilité).
             overflow = camion + remaining_gap[next_station.number] > capacite
-            if overflow or graph.get_distance(current_station, nearest_deficit) < graph.get_distance(current_station, next_station):
+            if overflow or graph.get_time(current_station, nearest_deficit) < graph.get_time(current_station, next_station):
                 besoin = -remaining_gap[nearest_deficit.number]
                 camion -= besoin
                 remaining_gap[nearest_deficit.number] = 0
@@ -116,7 +116,7 @@ def _tour_and_distance(graph: SolvingStationGraph) -> tuple[List[int], float]:
         if nxt is None:
             break
         nxt_station = graph.get_station(nxt)
-        distance += graph.get_distance(cur_station, nxt_station)
+        distance += graph.get_time(cur_station, nxt_station)
         tour.append(nxt)
         if nxt == 0:
             break

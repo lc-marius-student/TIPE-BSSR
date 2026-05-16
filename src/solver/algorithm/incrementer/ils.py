@@ -62,10 +62,10 @@ def _write_turn(graph: SolvingStationGraph, turn: List[int]) -> None:
     graph.add_edge(turn[-1], turn[0])
 
 
-def _tour_distance(turn: List[int], distance: Dict[int, Dict[int, float]]) -> float:
-    """Distance totale du tour (incluant le retour final au dépôt)."""
+def _tour_time(turn: List[int], cost: Dict[int, Dict[int, float]]) -> float:
+    """Temps de parcours total du tour (incluant le retour final au dépôt)."""
     n = len(turn)
-    return sum(distance[turn[k]][turn[k + 1]] for k in range(n - 1)) + distance[turn[-1]][turn[0]]
+    return sum(cost[turn[k]][turn[k + 1]] for k in range(n - 1)) + cost[turn[-1]][turn[0]]
 
 
 def _feasible(turn: List[int], gaps: Dict[int, int], capacity: int) -> bool:
@@ -131,16 +131,16 @@ def _perturb_feasible(
 def _vnd(graph: SolvingStationGraph, capacity: int, initial_turn: List[int]) -> List[int]:
     """VND (Variable Neighborhood Descent) : alterne 2-opt → or-opt jusqu'à convergence."""
     _write_turn(graph, initial_turn)
-    distance = graph.map_cache_distance
-    prev_distance = _tour_distance(initial_turn, distance)
+    cost = graph.time_cache
+    prev_cost = _tour_time(initial_turn, cost)
     while True:
         opt2  (graph, capacity)
         or_opt(graph, capacity)
         current_turn = _get_turn(graph)
-        new_distance = _tour_distance(current_turn, distance)
-        if new_distance + 1e-9 >= prev_distance:
+        new_cost = _tour_time(current_turn, cost)
+        if new_cost + 1e-9 >= prev_cost:
             return current_turn
-        prev_distance = new_distance
+        prev_cost = new_cost
 
 
 def ils(
@@ -151,12 +151,12 @@ def ils(
     seed: int = 0xBEEF,
 ) -> None:
     rdm            = random.Random(seed)
-    distance       = graph.map_cache_distance
+    cost           = graph.time_cache
     bike_gap_by_id = {station.number: station.bike_gap() for station in graph.list_stations()}
 
-    best          = _vnd(graph, vehicle_capacity, _get_turn(graph))
-    best_distance = _tour_distance(best, distance)
-    stagnation    = 0
+    best      = _vnd(graph, vehicle_capacity, _get_turn(graph))
+    best_cost = _tour_time(best, cost)
+    stagnation = 0
 
     # Boucle ILS : perturbe puis VND, garde la meilleure solution rencontrée.
     for _ in range(max_iterations):
@@ -172,10 +172,10 @@ def ils(
             pass
         else:
             local_optimum = _vnd(graph, vehicle_capacity, perturbed)
-            new_distance = _tour_distance(local_optimum, distance)
-            if new_distance + 1e-9 < best_distance:
+            new_cost = _tour_time(local_optimum, cost)
+            if new_cost + 1e-9 < best_cost:
                 best = local_optimum
-                best_distance = new_distance
+                best_cost = new_cost
                 stagnation = 0
                 continue
 

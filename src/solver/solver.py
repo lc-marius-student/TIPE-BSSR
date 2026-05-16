@@ -1,3 +1,5 @@
+from enum import Enum
+
 from src.objects.station import TargetedStation, Station
 from src.solver.algorithm.builder.method1 import method1
 from src.solver.algorithm.builder.method2 import method2
@@ -5,7 +7,6 @@ from src.solver.algorithm.incrementer.ils import ils
 from src.solver.algorithm.incrementer.opt2 import opt2
 from src.solver.algorithm.incrementer.or_opt import or_opt
 from src.solver.graph import SolvingStationGraph
-from enum import Enum
 
 from src.solver.map import Map
 from src.solver.reviewer import SolutionMetrics, review_solution
@@ -51,9 +52,9 @@ def solve(graph: SolvingStationGraph, capacity: int,
           improvers: list[SolvingAlgorithmImprover] = None, improver_max_iterations: int = 1000) -> SolutionMetrics:
     """Résout le problème de rééquilibrage des vélos en utilisant les algorithmes spécifiés"""
 
-    print("Preloading distances...")
-    graph.preload_distances()
-    print("Distances preloaded.")
+    print("Preloading travel times...")
+    graph.preload_times()
+    print("Travel times preloaded.")
 
     if builder == SolvingAlgorithmBuilder.METHOD_1:
         method1(graph, capacity)

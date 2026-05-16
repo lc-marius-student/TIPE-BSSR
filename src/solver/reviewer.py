@@ -8,8 +8,8 @@ from src.solver.graph import SolvingStationGraph
 @dataclass
 class SolutionMetrics:
     solved: bool
-    distance: float
-    score: float
+    time: float   # secondes (temps de parcours total de la tournée)
+    ratio: float  # sol / borne_inf ∈ [1, +∞).  1.0 = optimum atteint.
 
 def assert_solution(solution: SolvingStationGraph, capacity: int):
     """
@@ -43,9 +43,9 @@ def assert_solution(solution: SolvingStationGraph, capacity: int):
         raise Exception("Le graphe ne visite pas toutes les stations.")
 
 
-def _tour_distance(graph: SolvingStationGraph) -> float:
-    """Longueur du cycle hamiltonien actuellement encodé dans le graphe."""
-    distance = 0.0
+def _tour_time(graph: SolvingStationGraph) -> float:
+    """Temps de parcours total (secondes) du cycle hamiltonien encodé dans le graphe."""
+    total = 0.0
     current_id = 0
     visited = set()
 
@@ -53,89 +53,42 @@ def _tour_distance(graph: SolvingStationGraph) -> float:
         visited.add(current_id)
         successor = graph.get_successor(current_id)
         if successor is not None:
-            distance += graph.get_distance(
+            total += graph.get_time(
                 graph.get_station(current_id), graph.get_station(successor)
             )
         current_id = successor
 
-    return distance
+    return total
 
 
 def review_solution(graph: SolvingStationGraph, capacity: int) -> SolutionMetrics:
-    """Évalue une solution de manière détaillée"""
+    """Évalue une solution.
+
+    Le score est un ratio d'approximation observé : sol / borne_inf. Comme
+    borne_inf ≤ OPT, ce ratio majore le vrai ratio d'approximation (style
+    p-approx). Pas besoin de la borne supérieure pour évaluer la qualité.
+    """
     assert_solution(graph, capacity)
 
-    distance = _tour_distance(graph)
+    tour_time = _tour_time(graph)
+    lower_bound = compute_lower_bound(graph)
 
-    lower_bound, upper_bound = compute_bounds(graph, capacity)
+    ratio = tour_time / lower_bound if lower_bound > 0 else float('inf')
 
-    if upper_bound <= lower_bound:
-        score = 1.0
-    else:
-        score = 1.0 - (distance - lower_bound) / (upper_bound - lower_bound)
-
-    score = max(0.0, min(1.0, score))
-
-    return SolutionMetrics(
-        distance=distance,
-        score=score,
-        solved=True
-    )
+    return SolutionMetrics(time=tour_time, ratio=ratio, solved=True)
 
 
-def compute_bounds(graph: SolvingStationGraph, capacity: int) -> tuple[float, float]:
-    """
-    Calcule les bornes inférieure et supérieure pour un TSP asymétrique.
-
-    Lower bound : relaxation par problème d'affectation. On cherche la
-    permutation σ (chaque station → un successeur unique, chaque station →
-    un prédécesseur unique) qui minimise Σ d(i, σ(i)). C'est le TSP
-    asymétrique privé de la contrainte « un seul cycle » : σ peut former
-    une union de sous-tours, donc son coût minore l'optimum. Résolu en
-    O(n³) par l'algorithme hongrois (`linear_sum_assignment`). La contrainte
-    de capacité ne fait que restreindre l'ensemble des tournées admissibles,
-    donc cette borne reste valide.
-
-    Upper bound : coût d'une vraie tournée admissible, construite par
-    plus-proche-voisin multi-départ (`method1`). Une tournée réalisable
-    majore l'optimum. À défaut (aucune tournée trouvée, ou coût aberrant),
-    on retombe sur 2 × lower bound.
-    """
+def compute_lower_bound(graph: SolvingStationGraph) -> float:
+    """Borne inférieure : relaxation par problème d'affectation (cf. compute_bounds)."""
     stations = graph.list_stations()
-
     if len(stations) <= 1:
-        return 0.0, 0.0
-
+        return 0.0
     n = len(stations)
     cost = np.empty((n, n))
     for i, si in enumerate(stations):
         for j, sj in enumerate(stations):
-            cost[i, j] = np.inf if i == j else graph.get_distance(si, sj)
-
+            cost[i, j] = np.inf if i == j else graph.get_time(si, sj)
     rows, cols = linear_sum_assignment(cost)
-    lower_bound = float(cost[rows, cols].sum())
+    return float(cost[rows, cols].sum())
 
-    upper_bound = _nearest_neighbour_upper_bound(graph, capacity)
-    if upper_bound is None or upper_bound < lower_bound:
-        upper_bound = 2 * lower_bound
 
-    return lower_bound, upper_bound
-
-def _nearest_neighbour_upper_bound(graph: SolvingStationGraph, capacity: int) -> float | None:
-    """
-    Construit une tournée admissible par plus-proche-voisin multi-départ
-    """
-    from src.solver.algorithm.builder.method1 import method1
-
-    probe = SolvingStationGraph(graph.map, graph.get_station(0))
-    for station in graph.list_stations():
-        if station.number != 0:
-            probe.add_station(station)
-    probe.map_cache_distance = graph.map_cache_distance
-
-    try:
-        method1(probe, capacity)
-    except Exception:
-        return None
-
-    return _tour_distance(probe)

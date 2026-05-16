@@ -39,7 +39,7 @@ def _get_turn(graph: SolvingStationGraph) -> List[int]:
 
 
 def _prefix_sums(
-    distance: Dict[int, Dict[int, float]],
+    cost: Dict[int, Dict[int, float]],
     turn: List[int],
     bike_gaps: List[int],
 ) -> Tuple[List[float], List[float], List[int]]:
@@ -51,8 +51,8 @@ def _prefix_sums(
     for k in range(n - 1):
         current_id = turn[k]
         next_id    = turn[k + 1]
-        fwd_prefix [k + 1] = fwd_prefix [k] + distance[current_id][next_id]
-        rev_prefix [k + 1] = rev_prefix [k] + distance[next_id][current_id]
+        fwd_prefix [k + 1] = fwd_prefix [k] + cost[current_id][next_id]
+        rev_prefix [k + 1] = rev_prefix [k] + cost[next_id][current_id]
         load_prefix[k + 1] = load_prefix[k] + bike_gaps[k + 1]
     return fwd_prefix, rev_prefix, load_prefix
 
@@ -82,11 +82,11 @@ def opt2(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: int 
     n = len(turn)
     if n < 4:
         return
-    distance  = graph.map_cache_distance
+    cost      = graph.time_cache
     bike_gaps = [graph.get_station(station_id).bike_gap() for station_id in turn]
 
     for _ in range(max_iterations):
-        fwd_prefix, rev_prefix, load_prefix = _prefix_sums(distance, turn, bike_gaps)
+        fwd_prefix, rev_prefix, load_prefix = _prefix_sums(cost, turn, bike_gaps)
         improving_move: Optional[Tuple[int, int]] = None
 
         for i in range(1, n - 2):
@@ -100,8 +100,8 @@ def opt2(graph: SolvingStationGraph, vehicle_capacity: int, max_iterations: int 
                 #   + rev_prefix[j] − rev_prefix[i]         intérieur en sens reverse
                 #   − (fwd_prefix[j+1] − fwd_prefix[i-1])   tout l'avant en un terme
                 delta = (
-                    distance[turn[i - 1]][turn[j]]
-                    + distance[turn[i]][turn[j + 1]]
+                    cost[turn[i - 1]][turn[j]]
+                    + cost[turn[i]][turn[j + 1]]
                     + (rev_prefix[j] - rev_prefix[i])
                     - (fwd_prefix[j + 1] - fwd_prefix[i - 1])
                 )

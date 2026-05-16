@@ -10,7 +10,8 @@ class SolvingStationGraph:
         self.predecessors: dict[int, int | None] = {}
         self.station_map: dict[int, TargetedStation] = {}
         self.map = map
-        self.map_cache_distance: dict[int, dict[int, float]] = {}
+        # Coût d'arête = temps de parcours en secondes (cf. Map.get_time, H3-H4).
+        self.time_cache: dict[int, dict[int, float]] = {}
 
         assert depot_station.number == 0, "Depot must have number 0"
         self.add_station(TargetedStation.from_station(depot_station, 0, 0))
@@ -87,25 +88,26 @@ class SolvingStationGraph:
         """Vrai si chaque station a un successeur, i.e. la tournée est complète."""
         return len(self.list_edges()) == self.size()
 
-    def get_distance(self, s1: Station, s2: Station) -> float:
-        """Distance routière entre deux stations, mémorisée après le premier calcul."""
-        cache = self.map_cache_distance.setdefault(s1.number, {})
+    def get_time(self, s1: Station, s2: Station) -> float:
+        """Temps de parcours routier entre deux stations, en secondes.
+        """
+        cache = self.time_cache.setdefault(s1.number, {})
         if s2.number not in cache:
-            cache[s2.number] = self.map.get_distance(
+            cache[s2.number] = self.map.get_time(
                 GeoPoint(s1.lat, s1.long), GeoPoint(s2.lat, s2.long)
             )
         return cache[s2.number]
 
-    def preload_distances(self) -> None:
-        """Précalcule les distances entre toutes les paires de stations (accélère les algorithmes)."""
+    def preload_times(self) -> None:
+        """Précalcule les temps de parcours entre toutes les paires (accélère les algorithmes)."""
         stations = self.list_stations()
         for s1 in stations:
             for s2 in stations:
                 if s1.number != s2.number:
-                    self.get_distance(s1, s2)
+                    self.get_time(s1, s2)
 
     def get_nearest_neighbor(self, station_number: int, condition) -> TargetedStation | None:
-        """Station la plus proche d'une station de référence satisfaisant une condition donnée."""
+        """Station la plus proche (en temps) d'une station de référence satisfaisant une condition."""
         reference_station = self.get_station(station_number)
 
         candidates = [
@@ -115,7 +117,7 @@ class SolvingStationGraph:
         if not candidates:
             return None
 
-        return min(candidates, key=lambda s: self.get_distance(reference_station, s))
+        return min(candidates, key=lambda s: self.get_time(reference_station, s))
 
 
 def test():
